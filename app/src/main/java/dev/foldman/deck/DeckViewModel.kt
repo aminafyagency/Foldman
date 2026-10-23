@@ -73,6 +73,9 @@ data class DeckUi(
     val sleepRemainingMs: Long = 0,
     val sleepMinutes: Int = 0,
     val fx: FxUi = FxUi(),
+    /** The player's look (see ui/Skins.kt) and the cassette in it. */
+    val skinId: String = "classic",
+    val cassette: CassetteType = CassetteType.AUTO,
 ) {
     /** How far through the tape we are: the left reel empties into the right one as this grows. */
     val progress: Float get() = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
@@ -387,6 +390,20 @@ class DeckViewModel(app: Application) : AndroidViewModel(app) {
         tick()
     }
 
+    // region Look
+
+    fun setSkin(id: String) {
+        prefs.edit { putString(KEY_SKIN, id) }
+        tick()
+    }
+
+    fun setCassette(type: CassetteType) {
+        prefs.edit { putString(KEY_CASSETTE, type.name) }
+        tick()
+    }
+
+    // endregion
+
     // region Tape sound
 
     fun setHiss(on: Boolean) { TapeFx.update(getApplication(), hiss = on); tick() }
@@ -649,6 +666,8 @@ class DeckViewModel(app: Application) : AndroidViewModel(app) {
             sleepRemainingMs = if (sleepEndAt > 0) (sleepEndAt - now).coerceAtLeast(0) else 0,
             sleepMinutes = sleepMinutes,
             fx = FxUi(TapeFx.hiss, TapeFx.flutter, TapeFx.megaBass, TapeFx.eq.toList()),
+            skinId = prefs.getString(KEY_SKIN, null) ?: "classic",
+            cassette = runCatching { CassetteType.valueOf(prefs.getString(KEY_CASSETTE, null) ?: "") }.getOrDefault(CassetteType.AUTO),
         )
     }
 
@@ -696,6 +715,8 @@ class DeckViewModel(app: Application) : AndroidViewModel(app) {
         private const val KEY_APPLE_DEV = "apple_developer_token"
         private const val KEY_APPLE_USER = "apple_music_user_token"
         private const val KEY_AUTO_REVERSE = "auto_reverse"
+        private const val KEY_SKIN = "skin"
+        private const val KEY_CASSETTE = "cassette"
         private const val SLEEP_FADE_MS = 12_000L
         /** Winding speed relative to play: a four-minute song winds through in about 20 s. */
         const val WIND_SPEED = 12L

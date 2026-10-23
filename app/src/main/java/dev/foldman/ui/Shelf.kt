@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -62,21 +64,50 @@ class ShelfActions(
  * the tape that's in, with its cover and track list.
  */
 @Composable
-fun TapeShelf(ui: DeckUi, actions: ShelfActions, modifier: Modifier = Modifier) {
+fun TapeShelf(ui: DeckUi, actions: ShelfActions, modifier: Modifier = Modifier, compact: Boolean = false) {
     Column(
         modifier
             .background(Brush.verticalGradient(listOf(Color(0xFF2A1F17), Color(0xFF1C1510))))
-            .padding(16.dp),
+            .padding(if (compact) 10.dp else 16.dp),
     ) {
         Text("TAPES", style = EngravedCaps.copy(color = Color(0xFFB59B80), fontSize = 10.sp, letterSpacing = 3.sp))
-        Spacer(Modifier.height(10.dp))
-        Source.entries.forEach { s ->
-            TapeSpine(s, inDeck = s == ui.source, onClick = { actions.selectSource(s) })
-            Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(if (compact) 6.dp else 10.dp))
+        if (compact) {
+            // Short screens: the spines become a row of small cassette tabs.
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Source.entries.forEach { s -> SourceTab(s, inDeck = s == ui.source, onClick = { actions.selectSource(s) }) }
+            }
+        } else {
+            Source.entries.forEach { s ->
+                TapeSpine(s, inDeck = s == ui.source, onClick = { actions.selectSource(s) })
+                Spacer(Modifier.height(8.dp))
+            }
         }
+        ShelfExtras(ui, actions, compact)
         Spacer(Modifier.height(8.dp))
         JCard(ui, actions, Modifier.weight(1f).fillMaxWidth())
     }
+}
+
+/** Extra rows on the shelf (mixtapes). */
+@Composable
+internal fun ShelfExtras(ui: DeckUi, actions: ShelfActions, compact: Boolean) {}
+
+@Composable
+private fun SourceTab(source: Source, inDeck: Boolean, onClick: () -> Unit) {
+    val shell = DeckColors.shell(source)
+    Text(
+        source.label,
+        style = EngravedCaps.copy(color = if (shell.red * 0.3f + shell.green * 0.59f + shell.blue * 0.11f > 0.6f) DeckColors.Ink else Color.White, fontSize = 10.sp, letterSpacing = 1.sp),
+        maxLines = 1,
+        modifier = Modifier
+            .shadow(if (inDeck) 6.dp else 2.dp, RoundedCornerShape(4.dp))
+            .clip(RoundedCornerShape(4.dp))
+            .background(Brush.verticalGradient(listOf(lerp(shell, Color.White, 0.15f), shell, lerp(shell, Color.Black, 0.25f))))
+            .border(if (inDeck) 2.dp else 0.dp, if (inDeck) DeckColors.Accent else Color.Transparent, RoundedCornerShape(4.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 7.dp),
+    )
 }
 
 @Composable

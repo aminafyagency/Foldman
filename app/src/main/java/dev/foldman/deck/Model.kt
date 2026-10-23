@@ -12,6 +12,16 @@ enum class Source(val label: String, val packageName: String?) {
     SPOTIFY("Spotify", "com.spotify.music"),
 }
 
+/** The cassette in the deck. [AUTO] uses the one that comes with the player skin. */
+enum class CassetteType(val label: String) {
+    AUTO("Match player"),
+    SOURCE("By source"),
+    NORMAL("Type I normal"),
+    CHROME("Type II chrome"),
+    METAL("Type IV metal"),
+    CLEAR("Clear shell"),
+}
+
 /**
  * What the mechanism is doing. PAUSED keeps the play key latched with the pinch roller lifted;
  * STOPPED releases every key. The reels animate from this.

@@ -37,6 +37,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import dev.foldman.deck.CassetteType
 import dev.foldman.deck.DeckUi
 import dev.foldman.deck.LabelPalette
 import dev.foldman.deck.Source
@@ -64,7 +65,8 @@ const val TAPE_WINDOW_ASPECT = 84f / 36f
 @Composable
 fun TapeWindow(ui: DeckUi, anim: DeckAnimations, modifier: Modifier = Modifier, vertical: Boolean = false) {
     val measurer = rememberTextMeasurer()
-    val shell by androidx.compose.animation.animateColorAsState(DeckColors.shell(ui.source), tween(600), label = "shell")
+    val type = ui.cassette.takeUnless { it == CassetteType.AUTO } ?: LocalSkin.current.cassette
+    val shell by androidx.compose.animation.animateColorAsState(cassetteShell(type, ui.source), tween(600), label = "shell")
     Canvas(
         modifier
             .quarterTurn(vertical)
@@ -94,7 +96,7 @@ fun TapeWindow(ui: DeckUi, anim: DeckAnimations, modifier: Modifier = Modifier, 
                     translate(-CROP.left * u, -CROP.top * u)
                     scale(u, u, Offset.Zero)
                 }) {
-                    drawCassette(ui, anim.reels, shell, measurer, u)
+                    drawCassette(ui, type, anim.reels, shell, measurer, u)
                 }
             }
             // Smoked glass: tint, a long diagonal reflection and a soft top glare.
@@ -118,13 +120,23 @@ fun TapeWindow(ui: DeckUi, anim: DeckAnimations, modifier: Modifier = Modifier, 
 }
 
 /** Draws the cassette in its own millimetre space; [u] only scales stroke widths of text. */
-private fun DrawScope.drawCassette(ui: DeckUi, reels: ReelMotion, shell: Color, measurer: TextMeasurer, u: Float) {
+private fun DrawScope.drawCassette(ui: DeckUi, type: CassetteType, reels: ReelMotion, shell: Color, measurer: TextMeasurer, u: Float) {
     val light = shell.luminance() > 0.5f
     val shellRR = RoundRect(0f, 0f, 100f, 64f, CornerRadius(3.4f))
     val shellPath = Path().apply { addRoundRect(shellRR) }
+    val seeThrough = shell.alpha < 0.95f
 
     // Drop shadow on the bay floor.
-    translate(0.8f, 1.6f) { drawPath(shellPath, Color.Black.copy(alpha = 0.45f)) }
+    translate(0.8f, 1.6f) { drawPath(shellPath, Color.Black.copy(alpha = if (seeThrough) 0.25f else 0.45f)) }
+    if (seeThrough) {
+        // A clear or smoked shell shows the whole tape inside: both packs, the leader and the guides.
+        drawPack(HUB_L, reels.leftRadius, reels.leftAngle)
+        drawPack(HUB_R, reels.rightRadius, reels.rightAngle)
+        listOf(Offset(9f, 57f), Offset(91f, 57f)).forEach { drawCircle(Color(0xFFDCDCD8), 1.6f, it) }
+        drawLine(DeckColors.Tape, Offset(HUB_L.x - reels.leftRadius, HUB_L.y), Offset(9f, 57f), 0.6f)
+        drawLine(DeckColors.Tape, Offset(HUB_R.x + reels.rightRadius, HUB_R.y), Offset(91f, 57f), 0.6f)
+        drawLine(DeckColors.Tape, Offset(9f, 58.6f), Offset(91f, 58.6f), 0.6f)
+    }
     drawPath(
         shellPath,
         Brush.verticalGradient(listOf(lerp(shell, Color.White, 0.18f), shell, lerp(shell, Color.Black, 0.22f)), 0f, 64f),
@@ -162,7 +174,7 @@ private fun DrawScope.drawCassette(ui: DeckUi, reels: ReelMotion, shell: Color, 
     }
     drawPath(windowPath, Color.Black.copy(alpha = 0.55f), style = Stroke(0.5f))
 
-    drawLabel(ui, ui.label, measurer, windowRR, u)
+    drawLabel(ui, type, ui.label, measurer, windowRR, u)
     drawBottomBridge(shell, light)
 
     listOf(Offset(4.4f, 4.4f), Offset(95.6f, 4.4f), Offset(4.4f, 59.6f), Offset(95.6f, 59.6f), Offset(50f, 55.5f))
@@ -230,7 +242,7 @@ private fun DrawScope.drawHub(center: Offset, angle: Float, delta: Float) {
     drawCircle(Color(0xFF2B2C2F), 0.5f, center)
 }
 
-private fun DrawScope.drawLabel(ui: DeckUi, palette: LabelPalette, measurer: TextMeasurer, window: RoundRect, u: Float) {
+private fun DrawScope.drawLabel(ui: DeckUi, type: CassetteType, palette: LabelPalette, measurer: TextMeasurer, window: RoundRect, u: Float) {
     val labelRect = RoundRect(5.5f, 4f, 94.5f, 48.5f, CornerRadius(2f))
     val labelPath = Path().apply {
         fillType = PathFillType.EvenOdd
@@ -275,8 +287,16 @@ private fun DrawScope.drawLabel(ui: DeckUi, palette: LabelPalette, measurer: Tex
     text(line, 17.5f, 13.0f, 4.6f, 71f, hand)
 
     val tag = TextStyle(fontFamily = FontFamily.SansSerif, color = if (art != null) Color.White else ink, fontWeight = FontWeight.Black)
-    text(when (ui.source) { Source.LOCAL -> "FM 60"; Source.YT_MUSIC -> "YT ∞"; Source.APPLE_MUSIC -> "AM ∞"; Source.SPOTIFY -> "SP ∞" }, 79f, 44.2f, 2.6f, 14f, tag)
-    text("TYPE I  NORMAL", 12f, 44.6f, 2.2f, 30f, tag.copy(fontWeight = FontWeight.Bold))
+    val (length, grade) = when (type) {
+        CassetteType.CHROME -> "CrO₂ 90" to "TYPE II  HIGH (CrO₂)"
+        CassetteType.METAL -> "METAL 90" to "TYPE IV  METAL"
+        CassetteType.CLEAR -> "C 60" to "TYPE I  NORMAL · CLEAR"
+        else -> when (ui.source) {
+            Source.LOCAL -> "FM 60"; Source.YT_MUSIC -> "YT ∞"; Source.APPLE_MUSIC -> "AM ∞"; Source.SPOTIFY -> "SP ∞"
+        } to "TYPE I  NORMAL"
+    }
+    text(length, 77f, 44.2f, 2.6f, 16f, tag)
+    text(grade, 12f, 44.6f, 2.2f, 40f, tag.copy(fontWeight = FontWeight.Bold))
 }
 
 private fun placeholderTitle(ui: DeckUi) = when (ui.source) {
@@ -319,6 +339,15 @@ private fun DrawScope.drawBottomBridge(shell: Color, light: Boolean) {
     }
     // The tape itself, running across the openings.
     drawRect(DeckColors.Tape, Offset(18f, 62.6f), Size(64f, 0.9f))
+}
+
+/** Shell plastic for each cassette type. */
+private fun cassetteShell(type: CassetteType, source: Source): Color = when (type) {
+    CassetteType.AUTO, CassetteType.SOURCE -> DeckColors.shell(source)
+    CassetteType.NORMAL -> Color(0xFFEAE6DF)
+    CassetteType.CHROME -> Color(0xFF17181B)
+    CassetteType.METAL -> Color(0xFF39404A).copy(alpha = 0.86f)
+    CassetteType.CLEAR -> Color(0xFFDDE7EF).copy(alpha = 0.38f)
 }
 
 private fun Color.luminance(): Float = 0.2126f * red + 0.7152f * green + 0.0722f * blue

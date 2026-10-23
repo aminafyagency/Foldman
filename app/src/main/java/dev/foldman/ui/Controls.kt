@@ -109,7 +109,7 @@ fun Modifier.paintedBody(color: Color, capHeight: Dp = 0.dp, corner: Dp = 34.dp,
 
 /** Raised chrome lettering for the name on the case. */
 @Composable
-fun Wordmark(text: String, size: TextUnit, modifier: Modifier = Modifier, light: Boolean = true) {
+fun Wordmark(text: String, size: TextUnit, modifier: Modifier = Modifier, light: Boolean = true, color: Color? = null) {
     Text(
         text,
         modifier,
@@ -118,12 +118,14 @@ fun Wordmark(text: String, size: TextUnit, modifier: Modifier = Modifier, light:
             fontWeight = FontWeight.Black,
             fontSize = size,
             letterSpacing = size * 0.04f,
-            brush = if (light) {
+            brush = if (color != null) {
+                Brush.verticalGradient(listOf(lerp(color, Color.White, 0.22f), color, lerp(color, Color.Black, 0.15f)))
+            } else if (light) {
                 Brush.verticalGradient(listOf(Color(0xFFFFFFFF), Color(0xFFDDE1E6), Color(0xFFA9AFB7), Color(0xFFE9ECEF)))
             } else {
                 Brush.verticalGradient(listOf(Color(0xFF55585E), Color(0xFF2B2D31)))
             },
-            shadow = Shadow(Color.Black.copy(alpha = if (light) 0.45f else 0.2f), Offset(0f, 3f), 4f),
+            shadow = Shadow(Color.Black.copy(alpha = if (light && color == null) 0.45f else 0.2f), Offset(0f, if (color == null) 3f else 1.5f), 4f),
         ),
         maxLines = 1,
     )

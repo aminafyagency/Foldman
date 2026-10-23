@@ -40,6 +40,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
@@ -62,7 +64,7 @@ import dev.foldman.deck.DeckViewModel
 import dev.foldman.deck.Source
 import kotlinx.coroutines.launch
 
-private enum class Posture { Cover, Unfolded, Tabletop }
+private enum class Posture { Cover, Unfolded, Tabletop, Wide }
 
 /** Body enamel: the blue of the first portable cassette players. */
 private val Enamel = Color(0xFF2F6FB5)
@@ -145,6 +147,7 @@ fun FoldmanScreen(
     CompositionLocalProvider(
         LocalMechSounds provides sounds.takeIf { ui.keySounds },
         LocalHaptics provides ui.haptics,
+        LocalSkin provides Skins.byId(ui.skinId),
     ) {
         BoxWithConstraints(
             Modifier
@@ -158,6 +161,8 @@ fun FoldmanScreen(
             val posture = when {
                 fold != null && fold.state == FoldingFeature.State.HALF_OPENED && fold.orientation == FoldingFeature.Orientation.HORIZONTAL -> Posture.Tabletop
                 fold != null && fold.orientation == FoldingFeature.Orientation.VERTICAL -> Posture.Unfolded
+                // A regular phone held sideways: too short to stack three bands, so deck and tapes sit side by side.
+                fold == null && landscape && maxHeight < 520.dp -> Posture.Wide
                 maxWidth >= 600.dp && maxWidth > maxHeight * 0.7f -> Posture.Unfolded
                 else -> Posture.Cover
             }
@@ -172,6 +177,17 @@ fun FoldmanScreen(
                     LibraryBand(ui, shelfActions, vm::playQueueItem, Modifier.fillMaxWidth().weight(if (landscape) 0.31f else 0.27f))
                     DeckBand(ui, anim, deck, vm, Modifier.fillMaxWidth().weight(if (landscape) 0.44f else 0.46f))
                     NowPlayingBand(ui, vm::playQueueItem, Modifier.fillMaxWidth().weight(if (landscape) 0.25f else 0.27f))
+                }
+                Posture.Wide -> Row(
+                    Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    DeckBand(ui, anim, deck, vm, Modifier.weight(0.62f).fillMaxHeight())
+                    TapeShelf(
+                        ui, shelfActions,
+                        Modifier.weight(0.38f).fillMaxHeight().clip(RoundedCornerShape(18.dp)),
+                        compact = true,
+                    )
                 }
                 Posture.Tabletop -> {
                     val (topH, gap) = with(density) {
@@ -265,9 +281,11 @@ private val OnEnamel = EngravedCaps.copy(color = Color(0xFFDCE6F2))
 /** The folded phone: an upright portable player. */
 @Composable
 private fun CoverWalkman(ui: DeckUi, anim: DeckAnimations, deck: DeckControls, onTapes: () -> Unit, modifier: Modifier) {
+    val skin = LocalSkin.current
+    val onBody = EngravedCaps.copy(color = skin.ink)
     BoxWithConstraints(modifier) {
         val capH = maxHeight * 0.12f
-        Row(Modifier.fillMaxSize().paintedBody(Enamel, capHeight = capH, corner = 0.dp, framed = false)) {
+        Row(Modifier.fillMaxSize().skinBody(skin, capHeight = capH, corner = 0.dp, framed = false)) {
             Column(
                 Modifier
                     .weight(0.73f)
@@ -279,28 +297,28 @@ private fun CoverWalkman(ui: DeckUi, anim: DeckAnimations, deck: DeckControls, o
                 Box(Modifier.fillMaxWidth().height(capH)) {
                     // Inset from the corner so the display's rounded corner doesn't clip it.
                     HotlineButton(onTapes, Modifier.align(Alignment.TopStart).padding(top = 22.dp, start = 8.dp).size(44.dp, 22.dp))
-                    Text("TAPES", style = OnEnamel.copy(fontSize = 7.sp), modifier = Modifier.align(Alignment.TopStart).padding(top = 48.dp, start = 14.dp))
+                    Text("TAPES", style = onBody.copy(fontSize = 7.sp), modifier = Modifier.align(Alignment.TopStart).padding(top = 48.dp, start = 14.dp))
                     HotlineButton(deck.openMode, Modifier.align(Alignment.TopStart).padding(top = 22.dp, start = 66.dp).size(44.dp, 22.dp))
-                    Text("MODE", style = OnEnamel.copy(fontSize = 7.sp), modifier = Modifier.align(Alignment.TopStart).padding(top = 48.dp, start = 74.dp))
+                    Text("MODE", style = onBody.copy(fontSize = 7.sp), modifier = Modifier.align(Alignment.TopStart).padding(top = 48.dp, start = 74.dp))
                 }
                 Spacer(Modifier.height(18.dp))
-                Text("STEREO", style = Serif.copy(fontSize = 30.sp))
+                Text(skin.tagline, style = Serif.copy(fontSize = 30.sp, color = skin.ink))
                 Spacer(Modifier.height(18.dp))
                 Row(Modifier.weight(1f).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
                         TapeWindow(ui, anim, vertical = true)
                     }
                     Spacer(Modifier.width(12.dp))
-                    EjectArrow(onTapes, Modifier.size(30.dp, 58.dp))
+                    EjectArrow(onTapes, Modifier.size(30.dp, 58.dp), color = skin.ink)
                 }
                 Spacer(Modifier.height(14.dp))
                 Text(
                     listOf(ui.title, ui.artist).filter { it.isNotBlank() }.joinToString("  —  ").ifBlank { "NO TAPE" }.uppercase(),
-                    style = OnEnamel.copy(fontSize = 9.sp, letterSpacing = 1.5.sp),
+                    style = onBody.copy(fontSize = 9.sp, letterSpacing = 1.5.sp),
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(Modifier.height(10.dp))
-                Wordmark("FOLDMAN", 40.sp)
+                Wordmark(skin.badge, 40.sp, color = skin.badgeColor.takeUnless { skin.chromeBadge })
                 Spacer(Modifier.height(20.dp))
             }
             SideStrip(ui, deck, Modifier.weight(0.27f).fillMaxHeight())
@@ -346,14 +364,15 @@ private fun SideStrip(ui: DeckUi, deck: DeckControls, modifier: Modifier) {
 /** The unfolded phone: the player laid down as a deck. */
 @Composable
 private fun DeckBand(ui: DeckUi, anim: DeckAnimations, deck: DeckControls, vm: DeckViewModel, modifier: Modifier) {
-    Row(modifier.paintedBody(Enamel, corner = 22.dp)) {
+    val skin = LocalSkin.current
+    Row(modifier.skinBody(skin, corner = 22.dp)) {
         Column(Modifier.weight(0.74f).fillMaxHeight().padding(horizontal = 20.dp, vertical = 14.dp)) {
             Row(verticalAlignment = Alignment.Bottom) {
-                Text("STEREO", style = Serif.copy(fontSize = 24.sp))
+                Text(skin.tagline, style = Serif.copy(fontSize = 24.sp, color = skin.ink))
                 Spacer(Modifier.weight(1f))
-                Text("FM-F8 · STEREO CASSETTE PLAYER", style = OnEnamel.copy(fontSize = 8.sp))
+                Text(skin.model, style = EngravedCaps.copy(color = skin.ink, fontSize = 8.sp), maxLines = 1)
                 Spacer(Modifier.width(16.dp))
-                Wordmark("FOLDMAN", 26.sp)
+                Wordmark(skin.badge, 26.sp, color = skin.badgeColor.takeUnless { skin.chromeBadge })
             }
             Spacer(Modifier.height(10.dp))
             Row(Modifier.weight(1f).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -375,7 +394,7 @@ private fun DeckBand(ui: DeckUi, anim: DeckAnimations, deck: DeckControls, vm: D
                     TapeWindow(ui, anim)
                 }
                 Spacer(Modifier.width(12.dp))
-                EjectArrow({ deck.stop() }, Modifier.size(26.dp, 50.dp))
+                EjectArrow({ deck.stop() }, Modifier.size(26.dp, 50.dp), color = skin.ink)
             }
             Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.Bottom) {
