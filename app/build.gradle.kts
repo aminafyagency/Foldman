@@ -19,8 +19,10 @@ val signingProps = Properties().apply {
 }
 
 // The app version; versionCode must go up by one with every release.
-val appVersionName = "0.1.2"
-val appVersionCode = 3
+// CI builds count up from the GitHub run number, so each one installs over the last as an update.
+val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0
+val appVersionName = "0.2.$buildNumber"
+val appVersionCode = 100 + buildNumber
 
 base {
     archivesName = "Foldman-$appVersionName"

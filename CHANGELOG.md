@@ -2,6 +2,23 @@
 
 All notable changes to Foldman. Versions follow [semantic versioning](https://semver.org); downloads are on the [releases page](https://github.com/deveshrai/Foldman/releases).
 
+## [0.2.x] — 2026-10-23 (Aminafy edition)
+
+### Added
+- **Player skins.** Seven original designs, each with its own badge and finish: Classic Blue (enamel), Original '79 (brushed aluminium with a colour band), Sport (ribbed yellow rubber with a gasket), Chrome '85 (mirror chrome), Crystal (clear plastic showing the motor, flywheel and circuit board), Boombox Red (gloss with chrome trim) and Midnight (soft-touch black). Pick one in MODE.
+- **Cassette types.** Type I normal, Type II chrome, Type IV metal and a clear shell that shows the whole tape path; or match the player, or colour by source.
+- **Mixtapes.** Name a tape, choose a label colour and record songs from your folder in any order. Tap to play, hold to edit.
+- **Tape sound.** MEGA BASS, tape hiss, wow & flutter and a five-band graphic EQ with presets, on local files.
+- **Sleep timer** (15–90 minutes, fading local files out) and **auto-reverse**: at the end of the tape the deck flips to side B and the reels turn the other way.
+- **Spotify** as a media-session source, alongside YT Music and Apple Music.
+- **Home-screen widget** with the cover, title and play/pause/skip keys, coloured to match the skin.
+- **Regular phones in landscape** get the deck and tape shelf side by side.
+- MODE button on the cover screen and on the deck's end strip.
+
+### Changed
+- Titles and artists are read for every song in the folder, not just the first 600, and fill in as they're read.
+- Builds are made and signed automatically on GitHub; the version counts up with each build.
+
 ## [0.1.2] — 2026-10-21
 
 ### Changed
