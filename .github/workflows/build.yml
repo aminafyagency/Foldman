@@ -1,0 +1,77 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Accept SDK licences and install platform
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-37" > /dev/null || true
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Signing config
+        run: |
+          # Uses a private key from the KEYSTORE_B64 secret when one is set, otherwise the
+          # key committed in ci/ (fine for sideloading; use a secret before any store release).
+          if [ -n "${{ secrets.KEYSTORE_B64 }}" ]; then
+            echo "${{ secrets.KEYSTORE_B64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
+            STORE="$RUNNER_TEMP/release.jks"; PASS="${{ secrets.KEYSTORE_PASSWORD }}"; ALIAS="${{ secrets.KEY_ALIAS }}"
+          else
+            STORE="$GITHUB_WORKSPACE/ci/foldman-release.jks"; PASS="foldman-aminafy"; ALIAS="foldman"
+          fi
+          printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' "$STORE" "$PASS" "$ALIAS" "$PASS" > signing.properties
+
+      - name: Build release APK
+        run: |
+          set -o pipefail
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
+
+      - name: Report compile errors
+        if: failure()
+        run: |
+          # Surface errors as annotations so they can be read from the commit's check run.
+          enc() { sed -e 's/%/%25/g' | awk 'BEGIN{ORS="%0A"} {print}'; }
+          ERR=$(grep -E '^(e: |w: .*error|ERROR:|FAILURE:|> )|What went wrong|Could not|Execution failed' build.log | head -80 | enc)
+          echo "::error title=Compile errors::${ERR}"
+          TAIL=$(tail -n 60 build.log | enc)
+          echo "::error title=Build log tail::${TAIL}"
+
+      - name: Find APK
+        id: apk
+        run: |
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          echo "path=$APK" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$APK")" >> "$GITHUB_OUTPUT"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Build ${{ github.run_number }}
+          body: ${{ github.event.head_commit.message }}
+          files: ${{ steps.apk.outputs.path }}
+          make_latest: true

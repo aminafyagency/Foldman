@@ -13,3 +13,6 @@ app/libs/*.aar
 signing.properties
 *.jks
 *.keystore
+
+# CI signing key (see .github/workflows/build.yml)
+!ci/foldman-release.jks
