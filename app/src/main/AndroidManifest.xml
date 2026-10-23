@@ -70,6 +70,22 @@
             tools:ignore="MissingClass"
             tools:node="merge" />
 
+        <!-- Home-screen deck widget and its keys. -->
+        <receiver
+            android:name=".widget.DeckWidget"
+            android:exported="false"
+            android:label="@string/widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/deck_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".widget.WidgetActionReceiver"
+            android:exported="false" />
+
         <!-- Notification access is what lets Foldman see YT Music's and Apple Music's media sessions. -->
         <service
             android:name=".remote.MediaListenerService"

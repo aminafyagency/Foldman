@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Light from above and a darker lower edge, laid over the flat skin colour. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="22dp" />
+            <gradient android:angle="270" android:startColor="#38FFFFFF" android:centerColor="#00FFFFFF" android:endColor="#47000000" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="22dp" />
+            <stroke android:width="1.5dp" android:color="#59FFFFFF" />
+        </shape>
+    </item>
+</layer-list>

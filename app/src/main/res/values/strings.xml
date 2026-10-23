@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Foldman</string>
+    <string name="widget_description">The deck on your home screen: what's playing, with play, pause and skip keys.</string>
+    <string name="widget_label">Foldman deck</string>
 </resources>

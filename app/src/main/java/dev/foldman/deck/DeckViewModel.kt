@@ -495,7 +495,8 @@ class DeckViewModel(app: Application) : AndroidViewModel(app) {
     // region Look
 
     fun setSkin(id: String) {
-        prefs.edit { putString(KEY_SKIN, id) }
+        prefs.edit(commit = true) { putString(KEY_SKIN, id) }
+        dev.foldman.widget.DeckWidget.refresh(getApplication())
         tick()
     }
 

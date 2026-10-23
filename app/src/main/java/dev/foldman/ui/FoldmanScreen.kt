@@ -167,6 +167,7 @@ fun FoldmanScreen(
         ) {
             val density = LocalDensity.current
             val sheetHeight = maxHeight * 0.8f
+            val editorHeight = maxHeight * 0.9f
             // Held sideways the inner screen is short, so the library gets a bigger share.
             val landscape = maxWidth > maxHeight
             val posture = when {
@@ -238,7 +239,7 @@ fun FoldmanScreen(
                         onSave = { name, color, uris -> vm.saveMixtape(existing?.id, name, color, uris); mixEditorOpen = false },
                         onDelete = existing?.let { m -> { vm.deleteMixtape(m.id); mixEditorOpen = false } },
                         onClose = { mixEditorOpen = false },
-                        modifier = Modifier.fillMaxWidth().height(maxHeight * 0.9f),
+                        modifier = Modifier.fillMaxWidth().height(editorHeight),
                     )
                 }
             }
