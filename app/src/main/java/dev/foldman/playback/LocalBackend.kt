@@ -81,6 +81,7 @@ class LocalBackend(private val context: Context) : DeckBackend {
      * mid-song) is kept as it is, so playback doesn't jump.
      */
     fun setTracks(newTracks: List<LocalTrack>, startIndex: Int? = null) {
+        val old = tracks
         tracks = newTracks
         libraryStatus = if (newTracks.isEmpty()) SourceStatus.EmptyFolder else SourceStatus.Ready
         withController { c ->
@@ -93,7 +94,7 @@ class LocalBackend(private val context: Context) : DeckBackend {
             } else {
                 // Refresh titles from tags without disturbing playback.
                 newTracks.forEachIndexed { i, t ->
-                    if (i < c.mediaItemCount && i != c.currentMediaItemIndex) c.replaceMediaItem(i, toMediaItem(t))
+                    if (i < c.mediaItemCount && i != c.currentMediaItemIndex && old.getOrNull(i) != t) c.replaceMediaItem(i, toMediaItem(t))
                 }
             }
             publish()
@@ -175,6 +176,8 @@ class LocalBackend(private val context: Context) : DeckBackend {
         c.play()
     }
     override fun pause() { controller?.pause() }
+    /** The player's own gain (not the system volume), for the sleep timer's fade-out. */
+    fun setPlayerVolume(volume: Float) { controller?.setVolume(volume.coerceIn(0f, 1f)) }
     override fun seekTo(positionMs: Long) { controller?.seekTo(positionMs) }
     override fun playQueueItem(id: Long) = playTrack(id.toInt())
     override fun skipToNext() { controller?.takeIf { it.hasNextMediaItem() }?.seekToNextMediaItem() }

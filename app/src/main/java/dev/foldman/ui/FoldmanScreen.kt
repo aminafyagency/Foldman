@@ -84,12 +84,13 @@ fun FoldmanScreen(
     onAppleSignIn: () -> Unit,
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
-    val anim = rememberDeckAnimations(ui.transport, ui.progress)
+    val anim = rememberDeckAnimations(ui.transport, ui.progress, reverse = ui.side == 'B')
     val sounds = remember { MechSounds() }
     DisposableEffect(sounds) { onDispose { sounds.release() } }
     val view = LocalView.current
     val scope = rememberCoroutineScope()
     var shelfOpen by rememberSaveable { mutableStateOf(false) }
+    var modeOpen by rememberSaveable { mutableStateOf(false) }
     val feel by rememberUpdatedState(ui)
 
     // A new tape drops into the deck whenever the source changes (and when the app opens).
@@ -111,6 +112,7 @@ fun FoldmanScreen(
                     }
                     shelfOpen = true
                 }
+                DeckEvent.Reverse -> if (feel.haptics) view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
             }
         }
     }
@@ -137,7 +139,7 @@ fun FoldmanScreen(
             apple = appleActions,
         )
     }
-    val deck = remember(vm) { DeckControls(vm) }
+    val deck = remember(vm) { DeckControls(vm) { modeOpen = true } }
     val fold = windowLayout?.displayFeatures?.filterIsInstance<FoldingFeature>()?.firstOrNull()
 
     CompositionLocalProvider(
@@ -196,6 +198,15 @@ fun FoldmanScreen(
                     }
                 }
             }
+            if (modeOpen) {
+                ModalBottomSheet(
+                    onDismissRequest = { modeOpen = false },
+                    sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                    containerColor = Color(0xFF1C1510),
+                ) {
+                    ModePanel(ui, vm, Modifier.fillMaxWidth().height(sheetHeight))
+                }
+            }
             if (shelfOpen && posture == Posture.Cover) {
                 ModalBottomSheet(
                     onDismissRequest = { shelfOpen = false },
@@ -237,7 +248,7 @@ private fun android.view.View.showSystemBars(show: Boolean) {
 }
 
 /** Key actions, bundled so the layouts don't each need the view model. */
-private class DeckControls(vm: DeckViewModel) {
+private class DeckControls(vm: DeckViewModel, val openMode: () -> Unit) {
     val play = vm::play
     val pause = vm::pauseKey
     val stop = vm::stop
@@ -269,6 +280,8 @@ private fun CoverWalkman(ui: DeckUi, anim: DeckAnimations, deck: DeckControls, o
                     // Inset from the corner so the display's rounded corner doesn't clip it.
                     HotlineButton(onTapes, Modifier.align(Alignment.TopStart).padding(top = 22.dp, start = 8.dp).size(44.dp, 22.dp))
                     Text("TAPES", style = OnEnamel.copy(fontSize = 7.sp), modifier = Modifier.align(Alignment.TopStart).padding(top = 48.dp, start = 14.dp))
+                    HotlineButton(deck.openMode, Modifier.align(Alignment.TopStart).padding(top = 22.dp, start = 66.dp).size(44.dp, 22.dp))
+                    Text("MODE", style = OnEnamel.copy(fontSize = 7.sp), modifier = Modifier.align(Alignment.TopStart).padding(top = 48.dp, start = 74.dp))
                 }
                 Spacer(Modifier.height(18.dp))
                 Text("STEREO", style = Serif.copy(fontSize = 30.sp))
@@ -390,6 +403,8 @@ private fun DeckBand(ui: DeckUi, anim: DeckAnimations, deck: DeckControls, vm: D
                 SlideSwitch(ui.keySounds, vm::setKeySounds, "CLICK", height = 54.dp)
                 Spacer(Modifier.height(8.dp))
                 SlideSwitch(ui.haptics, vm::setHaptics, "HAPTIC", height = 54.dp)
+                Spacer(Modifier.height(10.dp))
+                MiniButton("MODE", deck.openMode, diameter = 24.dp)
                 Spacer(Modifier.weight(1f))
                 PhonesJack(Modifier.size(18.dp))
                 Text("PHONES", style = EngravedCaps.copy(fontSize = 6.sp))

@@ -21,14 +21,19 @@ class LocalLibrary(private val context: Context) {
         found.sortedWith(compareBy<LocalTrack, String>(NaturalOrder) { it.folder }.thenBy(NaturalOrder) { it.uri.lastPathSegment ?: "" })
     }
 
-    /** Fills in tag titles and artists, which file names only approximate. Slow, so it runs after the scan. */
-    suspend fun readTags(tracks: List<LocalTrack>, limit: Int = 600): List<LocalTrack> = withContext(Dispatchers.IO) {
+    /**
+     * Fills in tag titles and artists, which file names only approximate. Slow, so it runs after the
+     * scan, for every file, handing back what it has so far every [BATCH] songs so big libraries fill
+     * in progressively instead of all at the end.
+     */
+    suspend fun readTags(tracks: List<LocalTrack>, onBatch: (List<LocalTrack>) -> Unit = {}): List<LocalTrack> = withContext(Dispatchers.IO) {
+        val out = tracks.toMutableList()
         val retriever = MediaMetadataRetriever()
         try {
-            tracks.mapIndexed { i, track ->
+            for (i in tracks.indices) {
                 coroutineContext.ensureActive()
-                if (i >= limit) return@mapIndexed track
-                runCatching {
+                val track = tracks[i]
+                out[i] = runCatching {
                     retriever.setDataSource(context, track.uri)
                     val title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
                     val artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
@@ -37,10 +42,15 @@ class LocalLibrary(private val context: Context) {
                         artist = artist?.takeIf { it.isNotBlank() } ?: track.artist,
                     )
                 }.getOrDefault(track)
+                if ((i + 1) % BATCH == 0 && i + 1 < tracks.size) {
+                    val snapshot = out.toList()
+                    withContext(Dispatchers.Main) { onBatch(snapshot) }
+                }
             }
         } finally {
             retriever.release()
         }
+        out.toList()
     }
 
     private suspend fun walk(tree: Uri, docId: String, folder: String, out: MutableList<LocalTrack>, onProgress: (Int) -> Unit) {
@@ -92,6 +102,7 @@ class LocalLibrary(private val context: Context) {
     }.getOrNull()
 
     companion object {
+        private const val BATCH = 300
         private val AUDIO_EXTENSIONS = setOf("mp3", "m4a", "aac", "flac", "ogg", "opus", "wav", "wma", "alac", "aiff", "aif", "mka")
         private val COVER_NAMES = setOf("cover", "folder", "front", "album", "albumart", "albumartsmall")
         private val TRACK_NUMBER = Regex("""^\s*(\d{1,3}|[A-D]\d{1,2})\s*[-._)\s]\s*""")

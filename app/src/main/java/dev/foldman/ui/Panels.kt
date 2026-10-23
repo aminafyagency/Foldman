@@ -317,6 +317,8 @@ fun NowPlayingBand(ui: DeckUi, onPlayQueue: (Long) -> Unit, modifier: Modifier =
                 add(ui.source.label)
                 if (ui.trackCount > 0) add("Track ${ui.trackIndex + 1} of ${ui.trackCount}")
                 add("${formatTime(ui.positionMs)} / ${formatTime(ui.durationMs)}")
+                if (ui.autoReverse) add("Side ${ui.side} · auto reverse")
+                if (ui.sleepRemainingMs > 0) add("Sleep in ${formatTime(ui.sleepRemainingMs)}")
             }
             details.forEach { Text(it, style = Sub) }
             Spacer(Modifier.weight(1f))

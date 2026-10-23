@@ -56,13 +56,19 @@ class ReelMotion {
         counter = 0.0
     }
 
-    internal fun step(dt: Float, transport: Transport, progress: Float) {
-        val target = when (transport) {
+    /**
+     * [reverse] is side B after an auto-reverse: the tape runs right to left, so the reels turn the
+     * other way and the right pack empties into the left one.
+     */
+    internal fun step(dt: Float, transport: Transport, rawProgress: Float, reverse: Boolean = false) {
+        val forward = when (transport) {
             Transport.PLAYING -> PLAY_SPEED
             Transport.FAST_FORWARDING -> PLAY_SPEED * WIND_VISUAL
             Transport.REWINDING -> -PLAY_SPEED * WIND_VISUAL
             Transport.PAUSED, Transport.STOPPED -> 0f
         }
+        val target = if (reverse) -forward else forward
+        val progress = if (reverse) 1f - rawProgress else rawProgress
         // Motors bite quickly at play speed; winding has more mass to get going and to stop.
         val tau = when {
             abs(target) > abs(tapeSpeed) -> if (abs(target) > PLAY_SPEED) 0.45f else 0.09f
@@ -116,10 +122,11 @@ class DeckAnimations {
 }
 
 @Composable
-fun rememberDeckAnimations(transport: Transport, progress: Float): DeckAnimations {
+fun rememberDeckAnimations(transport: Transport, progress: Float, reverse: Boolean = false): DeckAnimations {
     val anim = remember { DeckAnimations() }
     val currentTransport by rememberUpdatedState(transport)
-    val currentProgress by rememberUpdatedState(progress)
+    val currentReverse by rememberUpdatedState(reverse)
+    val currentProgress by rememberUpdatedState(if (reverse) 1f - progress else progress)
     LaunchedEffect(anim) {
         var last = 0L
         while (true) {
@@ -134,7 +141,7 @@ fun rememberDeckAnimations(transport: Transport, progress: Float): DeckAnimation
             withFrameNanos { now ->
                 val dt = if (last == 0L) 0f else ((now - last) / 1e9f).coerceAtMost(0.05f)
                 last = now
-                reels.step(dt, currentTransport, currentProgress)
+                reels.step(dt, currentTransport, if (currentReverse) 1f - currentProgress else currentProgress, currentReverse)
             }
         }
     }

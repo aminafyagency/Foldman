@@ -65,6 +65,12 @@ data class DeckUi(
     val keySounds: Boolean = true,
     val haptics: Boolean = true,
     val apple: AppleUi = AppleUi(),
+    /** Which side of the tape is playing; auto-reverse flips it at the end of the queue. */
+    val side: Char = 'A',
+    val autoReverse: Boolean = false,
+    /** Time left on the sleep timer, or 0 when it's off. */
+    val sleepRemainingMs: Long = 0,
+    val sleepMinutes: Int = 0,
 ) {
     /** How far through the tape we are: the left reel empties into the right one as this grows. */
     val progress: Float get() = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
@@ -75,6 +81,8 @@ sealed interface DeckEvent {
     data object TapeEnd : DeckEvent
     /** STOP pressed while already stopped: the cassette door pops. */
     data object Eject : DeckEvent
+    /** Auto-reverse flipped the tape at the end of a side. */
+    data object Reverse : DeckEvent
 }
 
 class DeckViewModel(app: Application) : AndroidViewModel(app) {
@@ -89,6 +97,7 @@ class DeckViewModel(app: Application) : AndroidViewModel(app) {
     private val remotes = mapOf(
         Source.YT_MUSIC to RemoteBackend(app, Source.YT_MUSIC),
         Source.APPLE_MUSIC to RemoteBackend(app, Source.APPLE_MUSIC),
+        Source.SPOTIFY to RemoteBackend(app, Source.SPOTIFY),
     )
 
     private val _ui = MutableStateFlow(DeckUi())
@@ -118,6 +127,13 @@ class DeckViewModel(app: Application) : AndroidViewModel(app) {
     private var windLastTick = 0L
     private var windLastSeek = 0L
     private var windWaitingForTrack = -1
+
+    private var side = 'A'
+    private var lastReverseAt = 0L
+    /** elapsedRealtime when the sleep timer runs out, or 0. */
+    private var sleepEndAt = 0L
+    private var sleepMinutes = 0
+    private var fading = false
 
     private var paletteKey: Any? = null
     private var label = LabelPalette.Default
@@ -303,7 +319,11 @@ class DeckViewModel(app: Application) : AndroidViewModel(app) {
             local.setTracks(found, startIndex = if (firstLoad) null else 0)
             if (!firstLoad) stopped = true
             tick()
-            val tagged = library.readTags(found)
+            val tagged = library.readTags(found) { partial ->
+                tracks = partial
+                local.setTracks(partial)
+                tick()
+            }
             tracks = tagged
             local.setTracks(tagged)
             tick()
@@ -355,6 +375,64 @@ class DeckViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit { putBoolean(KEY_HAPTICS, on) }
         tick()
     }
+
+    // region Sleep timer and auto-reverse
+
+    /** Stops the tape after [minutes] (fading out over the last few seconds on local files); 0 turns it off. */
+    fun setSleepTimer(minutes: Int) {
+        sleepMinutes = minutes
+        sleepEndAt = if (minutes > 0) SystemClock.elapsedRealtime() + minutes * 60_000L else 0L
+        if (fading) {
+            fading = false
+            local.setPlayerVolume(1f)
+        }
+        tick()
+    }
+
+    private fun sleepStep(now: Long) {
+        if (sleepEndAt == 0L) return
+        val left = sleepEndAt - now
+        if (left <= 0) {
+            sleepEndAt = 0L
+            sleepMinutes = 0
+            if (_ui.value.transport != Transport.STOPPED) stop()
+            if (fading) {
+                fading = false
+                // Restore the gain once the pause has gone through.
+                viewModelScope.launch {
+                    delay(400)
+                    local.setPlayerVolume(1f)
+                }
+            }
+            return
+        }
+        if (left < SLEEP_FADE_MS && source == Source.LOCAL) {
+            fading = true
+            local.setPlayerVolume(left.toFloat() / SLEEP_FADE_MS)
+        }
+    }
+
+    fun setAutoReverse(on: Boolean) {
+        prefs.edit { putBoolean(KEY_AUTO_REVERSE, on) }
+        if (!on) side = 'A'
+        tick()
+    }
+
+    /** End of the queue with auto-reverse on: flip to the other side and play the tape again. */
+    private fun maybeReverse(state: BackendState, now: Long): Boolean {
+        if (!state.ended || stopped || source != Source.LOCAL || winding != 0) return false
+        if (!prefs.getBoolean(KEY_AUTO_REVERSE, false) || state.trackCount == 0) return false
+        if (now - lastReverseAt < 3000) return true
+        lastReverseAt = now
+        side = if (side == 'A') 'B' else 'A'
+        stopped = false
+        playRequestedAt = now
+        local.playTrack(0)
+        _events.tryEmit(DeckEvent.Reverse)
+        return true
+    }
+
+    // endregion
 
     // region Apple Music
 
@@ -494,7 +572,8 @@ class DeckViewModel(app: Application) : AndroidViewModel(app) {
         val state = backend.state.value
         val now = SystemClock.elapsedRealtime()
         if (winding != 0) windStep(state)
-        if (state.ended) stopped = true
+        sleepStep(now)
+        if (state.ended && !maybeReverse(state, now)) stopped = true
         if (state.isPlaying && winding == 0) {
             stopped = false
             playRequestedAt = 0
@@ -536,6 +615,10 @@ class DeckViewModel(app: Application) : AndroidViewModel(app) {
             keySounds = prefs.getBoolean(KEY_SOUNDS, true),
             haptics = prefs.getBoolean(KEY_HAPTICS, true),
             apple = apple.value,
+            side = side,
+            autoReverse = prefs.getBoolean(KEY_AUTO_REVERSE, false),
+            sleepRemainingMs = if (sleepEndAt > 0) (sleepEndAt - now).coerceAtLeast(0) else 0,
+            sleepMinutes = sleepMinutes,
         )
     }
 
@@ -582,6 +665,8 @@ class DeckViewModel(app: Application) : AndroidViewModel(app) {
         private const val KEY_HAPTICS = "haptics"
         private const val KEY_APPLE_DEV = "apple_developer_token"
         private const val KEY_APPLE_USER = "apple_music_user_token"
+        private const val KEY_AUTO_REVERSE = "auto_reverse"
+        private const val SLEEP_FADE_MS = 12_000L
         /** Winding speed relative to play: a four-minute song winds through in about 20 s. */
         const val WIND_SPEED = 12L
 
