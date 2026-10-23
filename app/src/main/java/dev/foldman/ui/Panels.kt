@@ -98,6 +98,7 @@ fun LibraryBand(ui: DeckUi, actions: ShelfActions, onPlayQueue: (Long) -> Unit, 
                     }
                 }
             }
+            MixtapeListPanel(ui, actions.mixtapes)
         }
         Column(Modifier.weight(0.36f).fillMaxHeight()) {
             when (ui.source) {
@@ -119,7 +120,7 @@ fun LibraryBand(ui: DeckUi, actions: ShelfActions, onPlayQueue: (Long) -> Unit, 
 }
 
 private fun statusLine(ui: DeckUi): String = when (val s = ui.status) {
-    SourceStatus.Ready -> if (ui.source == Source.LOCAL) "${ui.tracks.size} songs" else "Connected"
+    SourceStatus.Ready -> if (ui.source == Source.LOCAL) (ui.activeMixtape?.let { "Mixtape · ${it.name}" } ?: "${ui.tracks.size} songs") else "Connected"
     SourceStatus.NeedsFolder -> "Choose a folder"
     is SourceStatus.Scanning -> "Scanning… ${s.found}"
     SourceStatus.EmptyFolder -> "No music found"
@@ -161,8 +162,8 @@ private fun Albums(ui: DeckUi, actions: ShelfActions) {
         SourceStatus.EmptyFolder -> Text("No music in that folder.", style = Sub)
         else -> {
             // Each folder is an album: its first track's index, cover and size.
-            val albums = remember(ui.tracks) {
-                ui.tracks.withIndex().groupBy { it.value.folder }.map { (folder, items) ->
+            val albums = remember(ui.library) {
+                ui.library.withIndex().groupBy { it.value.folder }.map { (folder, items) ->
                     Triple(folder, items.first(), items.size)
                 }
             }
@@ -172,7 +173,7 @@ private fun Albums(ui: DeckUi, actions: ShelfActions) {
                         Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
-                            .clickable { actions.playTrack(first.index) }
+                            .clickable { actions.mixtapes.playFromLibrary(first.index) }
                             .padding(vertical = 5.dp, horizontal = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {

@@ -76,6 +76,10 @@ data class DeckUi(
     /** The player's look (see ui/Skins.kt) and the cassette in it. */
     val skinId: String = "classic",
     val cassette: CassetteType = CassetteType.AUTO,
+    /** Everything in the chosen folder; [tracks] is what's loaded in the deck (the folder or a mixtape). */
+    val library: List<LocalTrack> = emptyList(),
+    val mixtapes: List<Mixtape> = emptyList(),
+    val activeMixtape: Mixtape? = null,
 ) {
     /** How far through the tape we are: the left reel empties into the right one as this grows. */
     val progress: Float get() = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
@@ -101,7 +105,7 @@ sealed interface DeckEvent {
 class DeckViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = app.getSharedPreferences("foldman", Context.MODE_PRIVATE)
     private val audio = app.getSystemService(AudioManager::class.java)
-    private val library = LocalLibrary(app)
+    private val libraryReader = LocalLibrary(app)
     private val local = LocalBackend(app).also { it.connect() }
     /** In-app Apple Music, when MusicKit's playback AAR is in the build; otherwise the Apple Music app is driven remotely. */
     private val appleKit = if (MusicKit.hasPlayback) AppleKitBackend(app) else null
@@ -126,8 +130,14 @@ class DeckViewModel(app: Application) : AndroidViewModel(app) {
             else -> remotes.getValue(source)
         }
 
+    /** What's in the deck: the folder, or the active mixtape. */
     private var tracks: List<LocalTrack> = emptyList()
+    private var library: List<LocalTrack> = emptyList()
     private var folderName: String? = null
+    private val mixStore = MixtapeStore(prefs)
+    private var mixtapes: List<Mixtape> = mixStore.load()
+    private var activeMixId: String? = prefs.getString(KEY_ACTIVE_MIX, null)
+    private val activeMix: Mixtape? get() = mixtapes.firstOrNull { it.id == activeMixId }
     private var scanJob: Job? = null
 
     /** STOP was pressed (or the tape ended): show STOPPED rather than PAUSED while not playing. */
@@ -323,23 +333,40 @@ class DeckViewModel(app: Application) : AndroidViewModel(app) {
         scanJob = viewModelScope.launch {
             local.setLibraryStatus(SourceStatus.Scanning(0))
             val found = runCatching {
-                library.scan(uri) { n -> viewModelScope.launch { local.setLibraryStatus(SourceStatus.Scanning(n)) } }
+                libraryReader.scan(uri) { n -> viewModelScope.launch { local.setLibraryStatus(SourceStatus.Scanning(n)) } }
             }.getOrElse {
                 local.setLibraryStatus(SourceStatus.NeedsFolder)
                 return@launch
             }
             folderName = found.firstOrNull()?.folder ?: uri.lastPathSegment?.substringAfterLast(':')
-            tracks = found
-            local.setTracks(found, startIndex = if (firstLoad) null else 0)
+            library = found
+            if (!firstLoad) setActiveMix(null)
+            val mix = activeMix
+            if (mix != null && mix.tracks.isNotEmpty()) {
+                // The deck was playing a mixtape when the app closed: keep it in.
+                tracks = mix.tracks
+                local.setTracks(mix.tracks, startIndex = null)
+            } else {
+                setActiveMix(null)
+                tracks = found
+                local.setTracks(found, startIndex = if (firstLoad) null else 0)
+            }
             if (!firstLoad) stopped = true
             tick()
-            val tagged = library.readTags(found) { partial ->
-                tracks = partial
-                local.setTracks(partial)
+            val tagged = libraryReader.readTags(found) { partial ->
+                library = partial
+                if (activeMixId == null) {
+                    tracks = partial
+                    local.setTracks(partial)
+                }
                 tick()
             }
-            tracks = tagged
-            local.setTracks(tagged)
+            library = tagged
+            if (activeMixId == null) {
+                tracks = tagged
+                local.setTracks(tagged)
+            }
+            refreshMixtapeTags(tagged)
             tick()
         }
     }
@@ -348,6 +375,81 @@ class DeckViewModel(app: Application) : AndroidViewModel(app) {
         backend.refresh()
         tick()
     }
+
+    // region Mixtapes
+
+    private fun setActiveMix(id: String?) {
+        activeMixId = id
+        prefs.edit { if (id == null) remove(KEY_ACTIVE_MIX) else putString(KEY_ACTIVE_MIX, id) }
+    }
+
+    /** Loads a mixtape into the deck and plays it from the top of side A. */
+    fun playMixtape(id: String) {
+        val mix = mixtapes.firstOrNull { it.id == id } ?: return
+        if (mix.tracks.isEmpty()) return
+        selectSource(Source.LOCAL)
+        if (winding != 0) finishWinding()
+        setActiveMix(id)
+        side = 'A'
+        tracks = mix.tracks
+        local.setTracks(mix.tracks, startIndex = 0)
+        stopped = false
+        playRequestedAt = SystemClock.elapsedRealtime()
+        local.play()
+        tick()
+    }
+
+    /** Takes the mixtape out and puts the whole folder back in the deck. */
+    fun playLibrary(index: Int = 0, play: Boolean = false) {
+        selectSource(Source.LOCAL)
+        if (winding != 0) finishWinding()
+        if (activeMixId != null) {
+            setActiveMix(null)
+            tracks = library
+            local.setTracks(library, startIndex = index.coerceIn(0, (library.size - 1).coerceAtLeast(0)))
+        }
+        if (play) playTrack(index) else tick()
+    }
+
+    /** A song picked from the library (albums list): plays it in the folder, taking out any mixtape. */
+    fun playFromLibrary(index: Int) = playLibrary(index, play = true)
+
+    /** Creates ([id] null) or updates a mixtape from library song URIs, in order. */
+    fun saveMixtape(id: String?, name: String, color: Long, uris: List<String>) {
+        val byUri = (library + mixtapes.flatMap { it.tracks }).associateBy { it.uri.toString() }
+        val songs = uris.mapNotNull { byUri[it] }
+        val mix = Mixtape(id ?: MixtapeStore.newId(), name.trim().ifBlank { "Mixtape" }, color, songs)
+        mixtapes = if (id == null) mixtapes + mix else mixtapes.map { if (it.id == id) mix else it }
+        mixStore.save(mixtapes)
+        if (id != null && id == activeMixId) {
+            tracks = songs
+            local.setTracks(songs)
+        }
+        tick()
+    }
+
+    fun deleteMixtape(id: String) {
+        mixtapes = mixtapes.filterNot { it.id == id }
+        mixStore.save(mixtapes)
+        if (activeMixId == id) playLibrary()
+        tick()
+    }
+
+    /** Song titles in mixtapes are copied when they're made; bring them up to date once the tags are read. */
+    private fun refreshMixtapeTags(tagged: List<LocalTrack>) {
+        val byUri = tagged.associateBy { it.uri.toString() }
+        var changed = false
+        mixtapes = mixtapes.map { m ->
+            val updated = m.tracks.map { t -> byUri[t.uri.toString()]?.takeIf { it != t }?.also { changed = true } ?: t }
+            if (updated == m.tracks) m else m.copy(tracks = updated)
+        }
+        if (changed) {
+            mixStore.save(mixtapes)
+            activeMix?.let { tracks = it.tracks }
+        }
+    }
+
+    // endregion
 
     fun openAccessSettings() {
         val app = getApplication<Application>()
@@ -653,7 +755,7 @@ class DeckViewModel(app: Application) : AndroidViewModel(app) {
             hasNext = state.hasNext,
             hasPrevious = state.hasPrevious,
             tracks = tracks,
-            folderName = folderName,
+            folderName = activeMix?.name ?: folderName,
             // While the wheel is being turned our own value leads; otherwise follow the hardware keys.
             volume = if (kotlin.math.abs(prev.volume - volume) * max < 1f) prev.volume else volume,
             queue = if (source == Source.LOCAL) localQueue() else state.queue,
@@ -668,6 +770,9 @@ class DeckViewModel(app: Application) : AndroidViewModel(app) {
             fx = FxUi(TapeFx.hiss, TapeFx.flutter, TapeFx.megaBass, TapeFx.eq.toList()),
             skinId = prefs.getString(KEY_SKIN, null) ?: "classic",
             cassette = runCatching { CassetteType.valueOf(prefs.getString(KEY_CASSETTE, null) ?: "") }.getOrDefault(CassetteType.AUTO),
+            library = library,
+            mixtapes = mixtapes,
+            activeMixtape = activeMix,
         )
     }
 
@@ -677,7 +782,11 @@ class DeckViewModel(app: Application) : AndroidViewModel(app) {
             artBitmap = null
             artSource = null
             paletteKey = null
-            label = LabelPalette.Default
+            val mix = activeMix.takeIf { source == Source.LOCAL }
+            label = if (mix != null) {
+                val c = Color(mix.color.toInt())
+                LabelPalette.Default.copy(stripe = c, stripe2 = blend(c, Color.White, 0.45f))
+            } else LabelPalette.Default
             return
         }
         if (artSource !== bitmap) {
@@ -716,6 +825,7 @@ class DeckViewModel(app: Application) : AndroidViewModel(app) {
         private const val KEY_APPLE_USER = "apple_music_user_token"
         private const val KEY_AUTO_REVERSE = "auto_reverse"
         private const val KEY_SKIN = "skin"
+        private const val KEY_ACTIVE_MIX = "active_mixtape"
         private const val KEY_CASSETTE = "cassette"
         private const val SLEEP_FADE_MS = 12_000L
         /** Winding speed relative to play: a four-minute song winds through in about 20 s. */

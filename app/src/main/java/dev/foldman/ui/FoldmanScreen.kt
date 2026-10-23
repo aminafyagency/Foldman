@@ -93,6 +93,8 @@ fun FoldmanScreen(
     val scope = rememberCoroutineScope()
     var shelfOpen by rememberSaveable { mutableStateOf(false) }
     var modeOpen by rememberSaveable { mutableStateOf(false) }
+    var mixEditorOpen by rememberSaveable { mutableStateOf(false) }
+    var mixEditing by rememberSaveable { mutableStateOf<String?>(null) }
     val feel by rememberUpdatedState(ui)
 
     // A new tape drops into the deck whenever the source changes (and when the app opens).
@@ -130,6 +132,14 @@ fun FoldmanScreen(
             play = vm::playApplePlaylist,
         )
     }
+    val mixActions = remember(vm) {
+        MixtapeActions(
+            play = vm::playMixtape,
+            backToFolder = { vm.playLibrary() },
+            playFromLibrary = vm::playFromLibrary,
+            edit = { id -> mixEditing = id; mixEditorOpen = true },
+        )
+    }
     val shelfActions = remember(vm) {
         ShelfActions(
             selectSource = vm::selectSource,
@@ -139,6 +149,7 @@ fun FoldmanScreen(
             openApp = vm::openSourceApp,
             installApp = onInstallApp,
             apple = appleActions,
+            mixtapes = mixActions,
         )
     }
     val deck = remember(vm) { DeckControls(vm) { modeOpen = true } }
@@ -214,6 +225,23 @@ fun FoldmanScreen(
                     }
                 }
             }
+            if (mixEditorOpen) {
+                val existing = ui.mixtapes.firstOrNull { it.id == mixEditing }
+                ModalBottomSheet(
+                    onDismissRequest = { mixEditorOpen = false },
+                    sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                    containerColor = Color(0xFF1C1510),
+                ) {
+                    MixtapeEditor(
+                        existing = existing,
+                        library = ui.library,
+                        onSave = { name, color, uris -> vm.saveMixtape(existing?.id, name, color, uris); mixEditorOpen = false },
+                        onDelete = existing?.let { m -> { vm.deleteMixtape(m.id); mixEditorOpen = false } },
+                        onClose = { mixEditorOpen = false },
+                        modifier = Modifier.fillMaxWidth().height(maxHeight * 0.9f),
+                    )
+                }
+            }
             if (modeOpen) {
                 ModalBottomSheet(
                     onDismissRequest = { modeOpen = false },
@@ -239,6 +267,7 @@ fun FoldmanScreen(
                             openApp = vm::openSourceApp,
                             installApp = onInstallApp,
                             apple = appleActions,
+                            mixtapes = mixActions,
                         ),
                         Modifier.fillMaxWidth().height(sheetHeight),
                     )

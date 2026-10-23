@@ -57,6 +57,7 @@ class ShelfActions(
     val openApp: () -> Unit,
     val installApp: (Source) -> Unit,
     val apple: AppleActions,
+    val mixtapes: MixtapeActions,
 )
 
 /**
@@ -91,7 +92,11 @@ fun TapeShelf(ui: DeckUi, actions: ShelfActions, modifier: Modifier = Modifier, 
 
 /** Extra rows on the shelf (mixtapes). */
 @Composable
-internal fun ShelfExtras(ui: DeckUi, actions: ShelfActions, compact: Boolean) {}
+internal fun ShelfExtras(ui: DeckUi, actions: ShelfActions, compact: Boolean) {
+    if (compact && ui.source != Source.LOCAL) return
+    Spacer(Modifier.height(if (compact) 8.dp else 4.dp))
+    MixtapeRow(ui, actions.mixtapes)
+}
 
 @Composable
 private fun SourceTab(source: Source, inDeck: Boolean, onClick: () -> Unit) {
@@ -205,7 +210,7 @@ private fun LocalCard(ui: DeckUi, actions: ShelfActions) {
         else -> {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "${ui.folderName ?: "Folder"} · ${ui.tracks.size} songs",
+                    "${ui.folderName ?: "Folder"} · ${if (ui.activeMixtape != null) "mixtape · " else ""}${ui.tracks.size} songs",
                     style = Typed.copy(fontWeight = FontWeight.Bold), modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
                 Text("CHANGE", style = EngravedCaps.copy(color = DeckColors.AccentDeep), modifier = Modifier.clickable(onClick = actions.pickFolder).padding(6.dp))
