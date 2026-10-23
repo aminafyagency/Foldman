@@ -23,13 +23,15 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
+        TapeFx.load(this)
         val renderers = object : DefaultRenderersFactory(this) {
             override fun buildAudioSink(
                 context: Context,
                 enableFloatOutput: Boolean,
                 enableAudioTrackPlaybackParams: Boolean,
             ): AudioSink = DefaultAudioSink.Builder(context)
-                .setAudioProcessors(arrayOf(TeeAudioProcessor(AudioLevels)))
+                // Effects first, so the VU meters read what comes out of the "tape".
+                .setAudioProcessors(arrayOf(TapeEffectsProcessor(), TeeAudioProcessor(AudioLevels)))
                 .build()
         }
         val player = ExoPlayer.Builder(this, renderers)

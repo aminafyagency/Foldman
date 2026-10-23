@@ -80,7 +80,9 @@ fun ModePanel(ui: DeckUi, vm: DeckViewModel, modifier: Modifier = Modifier) {
 
 /** Sections added by the sound and skin features. */
 @Composable
-internal fun ModeExtras(ui: DeckUi, vm: DeckViewModel) {}
+internal fun ModeExtras(ui: DeckUi, vm: DeckViewModel) {
+    SoundSection(ui, vm)
+}
 
 @Composable
 internal fun Section(title: String, content: @Composable () -> Unit) {

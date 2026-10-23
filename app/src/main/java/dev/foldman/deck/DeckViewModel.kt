@@ -22,6 +22,7 @@ import dev.foldman.apple.ApplePlaylist
 import dev.foldman.apple.MusicKit
 import dev.foldman.playback.LocalBackend
 import dev.foldman.playback.LocalLibrary
+import dev.foldman.playback.TapeFx
 import dev.foldman.remote.RemoteBackend
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -71,10 +72,19 @@ data class DeckUi(
     /** Time left on the sleep timer, or 0 when it's off. */
     val sleepRemainingMs: Long = 0,
     val sleepMinutes: Int = 0,
+    val fx: FxUi = FxUi(),
 ) {
     /** How far through the tape we are: the left reel empties into the right one as this grows. */
     val progress: Float get() = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
 }
+
+/** The tape sound settings, as the MODE panel shows them. */
+data class FxUi(
+    val hiss: Boolean = false,
+    val flutter: Boolean = false,
+    val megaBass: Boolean = false,
+    val eq: List<Float> = List(5) { 0f },
+)
 
 sealed interface DeckEvent {
     /** The tape ran out while winding: the mechanism thunks back to stop. */
@@ -141,6 +151,7 @@ class DeckViewModel(app: Application) : AndroidViewModel(app) {
     private var artSource: Any? = null
 
     init {
+        TapeFx.load(app)
         prefs.getString(KEY_FOLDER, null)?.let { loadFolder(Uri.parse(it), firstLoad = true) }
         syncAppleTokens()
         if (apple.value.signedIn) loadApplePlaylists()
@@ -375,6 +386,24 @@ class DeckViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit { putBoolean(KEY_HAPTICS, on) }
         tick()
     }
+
+    // region Tape sound
+
+    fun setHiss(on: Boolean) { TapeFx.update(getApplication(), hiss = on); tick() }
+    fun setFlutter(on: Boolean) { TapeFx.update(getApplication(), flutter = on); tick() }
+    fun setMegaBass(on: Boolean) { TapeFx.update(getApplication(), megaBass = on); tick() }
+    fun setEqBand(band: Int, db: Float) {
+        val eq = TapeFx.eq.copyOf()
+        if (band in eq.indices) eq[band] = db
+        TapeFx.update(getApplication(), eq = eq)
+        tick()
+    }
+    fun setEqPreset(name: String) {
+        TapeFx.presets[name]?.let { TapeFx.update(getApplication(), eq = it) }
+        tick()
+    }
+
+    // endregion
 
     // region Sleep timer and auto-reverse
 
@@ -619,6 +648,7 @@ class DeckViewModel(app: Application) : AndroidViewModel(app) {
             autoReverse = prefs.getBoolean(KEY_AUTO_REVERSE, false),
             sleepRemainingMs = if (sleepEndAt > 0) (sleepEndAt - now).coerceAtLeast(0) else 0,
             sleepMinutes = sleepMinutes,
+            fx = FxUi(TapeFx.hiss, TapeFx.flutter, TapeFx.megaBass, TapeFx.eq.toList()),
         )
     }
 
